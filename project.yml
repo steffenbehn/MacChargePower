@@ -40,3 +40,4 @@ targets:
         LSMinimumSystemVersion: "13.0"
         LSApplicationCategoryType: public.app-category.utilities
         NSHumanReadableCopyright: "© 2026 Steffen Behn"
+        ITSAppUsesNonExemptEncryption: false
