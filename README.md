@@ -38,6 +38,17 @@ Inspect the raw reading without the GUI:
 build/MacChargePower.app/Contents/MacOS/MacChargePower --print
 ```
 
+## Mac App Store build
+
+The App Store target is an Xcode project generated from [`project.yml`](project.yml) (the `.xcodeproj` is git-ignored — regenerate it):
+
+```sh
+xcodegen generate        # creates MacChargePower.xcodeproj
+open MacChargePower.xcodeproj
+```
+
+It's sandboxed (`com.apple.security.app-sandbox` — verified to still read the battery), bundles the app icon (regenerate with `swift tools/makeicon.swift`), and runs as a menu-bar agent. Archive in Xcode (Product → Archive → Distribute App → App Store Connect) to ship via TestFlight.
+
 ## Launch at login
 
 System Settings → General → Login Items → **＋** → pick `build/MacChargePower.app`.

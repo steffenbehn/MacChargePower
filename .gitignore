@@ -6,3 +6,9 @@ build/
 
 # macOS
 .DS_Store
+
+# Xcode — generated from project.yml by `xcodegen generate`
+MacChargePower.xcodeproj/
+Generated/
+DerivedData/
+*.xcarchive

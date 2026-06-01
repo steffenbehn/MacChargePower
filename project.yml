@@ -1,0 +1,42 @@
+# xcodegen spec — run `xcodegen generate` to (re)create MacChargePower.xcodeproj.
+# The .xcodeproj is NOT committed; regenerate it from this file.
+name: MacChargePower
+options:
+  bundleIdPrefix: de.steffenbehn
+  deploymentTarget:
+    macOS: "13.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: "95PQ38UNN6"
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+    PRODUCT_BUNDLE_IDENTIFIER: de.steffenbehn.macchargepower
+    ENABLE_HARDENED_RUNTIME: YES
+targets:
+  MacChargePower:
+    type: application
+    platform: macOS
+    sources:
+      - Sources
+      - Assets.xcassets
+    entitlements:
+      path: MacChargePower.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+    settings:
+      base:
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        COMBINE_HIDPI_IMAGES: YES
+    info:
+      path: Generated/Info.plist
+      properties:
+        CFBundleDisplayName: MacChargePower
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSUIElement: true
+        LSMinimumSystemVersion: "13.0"
+        LSApplicationCategoryType: public.app-category.utilities
+        NSHumanReadableCopyright: "© 2026 Steffen Behn"
