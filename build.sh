@@ -15,7 +15,7 @@ rm -rf "$BUNDLE"
 mkdir -p "$BUNDLE/Contents/MacOS"
 
 echo "Compiling…"
-swiftc -O -framework Cocoa -framework IOKit -framework SwiftUI -o "$BIN" Sources/main.swift
+swiftc -O -framework Cocoa -framework IOKit -framework SwiftUI -framework ServiceManagement -o "$BIN" Sources/main.swift
 
 cat > "$BUNDLE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

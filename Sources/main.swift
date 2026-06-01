@@ -2,6 +2,7 @@ import Cocoa
 import SwiftUI
 import IOKit
 import IOKit.ps
+import ServiceManagement
 
 // MARK: - Reading the live charging power
 
@@ -632,10 +633,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showMenu() {
         let menu = NSMenu()
+
+        let login = NSMenuItem(title: "Launch at Login",
+                               action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+        login.target = self
+        login.state = (SMAppService.mainApp.status == .enabled) ? .on : .off
+        menu.addItem(login)
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Quit MacChargePower",
                      action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+
         if let button = statusItem.button {
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 4), in: button)
+        }
+    }
+
+    @objc private func toggleLaunchAtLogin() {
+        do {
+            if SMAppService.mainApp.status == .enabled {
+                try SMAppService.mainApp.unregister()
+            } else {
+                try SMAppService.mainApp.register()
+            }
+        } catch {
+            NSLog("MacChargePower: login-item toggle failed: \(error.localizedDescription)")
         }
     }
 }
