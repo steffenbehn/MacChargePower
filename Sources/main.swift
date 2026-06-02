@@ -14,6 +14,7 @@ struct PowerReading {
     var voltage = 0.0         // V
     var amperage = 0.0        // A
     var adapterWatts: Int?    // negotiated ceiling from the PD handshake (65W / 100W…)
+    var adapterDrawWatts = 0.0 // total power pulled from the charger (into battery + running the Mac)
     var percent: Int?
     var minutesToFull: Int?
 }
@@ -50,6 +51,13 @@ func readPower() -> PowerReading {
         } else if let w = adapter["Watts"] as? Int, w > 0 {
             r.adapterWatts = w
         }
+    }
+
+    // Total power actually drawn from the charger (into the battery + running the
+    // Mac), from AppleSmartBattery's power telemetry. SystemPowerIn is in milliwatts.
+    if let telem = props["PowerTelemetryData"] as? [String: Any],
+       let mw = telem["SystemPowerIn"] as? Int, mw > 0 {
+        r.adapterDrawWatts = Double(mw) / 1000.0
     }
 
     let cur = props["CurrentCapacity"] as? Int
@@ -115,22 +123,33 @@ struct CardDisplay {
     var charging = false
     var sub = ""
     var ceiling: Int?
-    var watts = 0.0
     var voltage = 0.0
     var amps = 0.0
-    var batt = 0.0
-    var fillLevel = 0.0   // 0–1, share of the charger's ceiling currently in use
-    var showAdapter = false
-    var showBar = false
+    var fillLevel = 0.0    // 0–1, share of the charger's capacity actually in use
+    var draw = 0.0         // total W pulled from the charger
+    var systemWatts = 0.0  // W running the Mac (draw − into-battery)
+    var showPowerSplit = false
 }
 
 func cardDisplay(_ r: PowerReading) -> CardDisplay {
     var d = CardDisplay()
     let pct = r.percent ?? 0
-    d.batt = Double(pct)
     d.voltage = r.voltage
     d.amps = r.amperage
     d.ceiling = r.adapterWatts
+    d.draw = r.adapterDrawWatts
+    d.systemWatts = max(r.adapterDrawWatts - r.chargeWatts, 0)
+
+    // Liquid fill = how much of the charger's capacity is in use. Prefer the real
+    // total draw (into battery + system); fall back to the charge rate alone.
+    if r.externalConnected, let c = r.adapterWatts, c > 0 {
+        if r.adapterDrawWatts > 0 {
+            d.fillLevel = min(r.adapterDrawWatts / Double(c), 1)
+            d.showPowerSplit = true
+        } else {
+            d.fillLevel = min(r.chargeWatts / Double(c), 1)
+        }
+    }
 
     if r.isCharging && r.chargeWatts >= 0.5 {
         d.big = "\(Int(r.chargeWatts.rounded()))"; d.unit = "W"
@@ -138,16 +157,12 @@ func cardDisplay(_ r: PowerReading) -> CardDisplay {
         var s = "\(pct)%"
         if let m = r.minutesToFull { s += " · full in \(formatMinutes(m))" }
         d.sub = s
-        d.watts = r.chargeWatts
-        d.showAdapter = true
-        d.showBar = (r.adapterWatts ?? 0) > 0
-        if let c = r.adapterWatts, c > 0 { d.fillLevel = min(r.chargeWatts / Double(c), 1) }
     } else if r.fullyCharged {
         d.big = "Full"; d.statusText = "Charged"; d.charging = true
-        d.sub = "\(pct)% · maintained"; d.showAdapter = true
+        d.sub = "\(pct)% · maintained"
     } else if r.externalConnected {
         d.big = "Hold"; d.statusText = "On hold"
-        d.sub = "\(pct)% · not charging"; d.showAdapter = true
+        d.sub = "\(pct)% · not charging"
     } else {
         d.big = "\(pct)"; d.unit = "%"; d.statusText = "On battery"
         d.sub = "Not plugged in"
@@ -332,9 +347,15 @@ struct AuroraCard: View {
             Text(d.sub).font(.system(size: 13)).foregroundColor(.white.opacity(0.55)).padding(.top, 3)
 
             HStack(spacing: 8) {
-                if d.showAdapter, let ceil = d.ceiling { GlassPill(label: "CHARGER", value: "\(ceil)W") }
-                GlassPill(label: "VOLTS", value: String(format: "%.2f", d.voltage))
-                GlassPill(label: "AMPS", value: String(format: "%.2f", d.amps))
+                if d.showPowerSplit {
+                    GlassPill(label: "DRAW", value: "\(Int(d.draw.rounded()))W")
+                    GlassPill(label: "TO MAC", value: "\(Int(d.systemWatts.rounded()))W")
+                    if let ceil = d.ceiling { GlassPill(label: "CHARGER", value: "\(ceil)W") }
+                } else {
+                    if let ceil = d.ceiling { GlassPill(label: "CHARGER", value: "\(ceil)W") }
+                    GlassPill(label: "VOLTS", value: String(format: "%.2f", d.voltage))
+                    GlassPill(label: "AMPS", value: String(format: "%.2f", d.amps))
+                }
             }
             .padding(.top, 18)
         }
@@ -667,6 +688,7 @@ if CommandLine.arguments.contains("--print") {
     let r = readPower()
     print("external=\(r.externalConnected)  charging=\(r.isCharging)  full=\(r.fullyCharged)")
     print(String(format: "chargeWatts=%.1f  V=%.2f  A=%.2f", r.chargeWatts, r.voltage, r.amperage))
+    print(String(format: "adapterDraw=%.1fW  toSystem=%.1fW", r.adapterDrawWatts, max(r.adapterDrawWatts - r.chargeWatts, 0)))
     print("ceiling=\(r.adapterWatts.map { "\($0)W" } ?? "n/a")  percent=\(r.percent.map { "\($0)%" } ?? "n/a")  toFull=\(r.minutesToFull.map { "\($0)m" } ?? "n/a")")
     exit(0)
 }
