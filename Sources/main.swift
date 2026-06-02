@@ -219,10 +219,10 @@ func cardDisplay(_ r: PowerReading) -> CardDisplay {
         if let m = r.minutesToFull { s += " · full in \(formatMinutes(m))" }
         d.sub = s
     } else if r.externalConnected {
-        d.big = r.fullyCharged ? "Full" : "Plugged"
-        d.charging = r.fullyCharged
-        d.statusText = r.fullyCharged ? "Charged" : "Plugged in"
-        d.sub = "\(pct)%"
+        d.big = "\(pct)"; d.unit = "%"
+        d.charging = r.fullyCharged || r.isCharging
+        d.statusText = r.fullyCharged ? "Charged" : (r.isCharging ? "Charging" : "Plugged in")
+        d.sub = r.fullyCharged ? "Fully charged" : "Measuring power…"
     } else {
         d.statusText = "On battery"
         if r.dischargeWatts >= 0.5 {
@@ -637,6 +637,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastFlashWatts = 0
     private var lastPercent = 100
     private var lastFully = false
+    private var lastDraw = 0.0
 
     private let pollInterval = 2.0          // while plugged in
     private let batteryPollInterval = 8.0   // on battery (lighter, but still live)
@@ -673,7 +674,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var notificationsEnabled: Bool { UserDefaults.standard.bool(forKey: "notificationsEnabled") }
 
     @objc func update() {
-        let r = readPower()
+        var r = readPower()
+        // Bridge the brief gap right after plugging in, before the charger's power
+        // telemetry populates (it momentarily reads 0 W).
+        if r.externalConnected, r.adapterDrawWatts < 0.5, lastDraw >= 0.5 { r.adapterDrawWatts = lastDraw }
+        if r.externalConnected, r.adapterDrawWatts >= 0.5 { lastDraw = r.adapterDrawWatts }
+        if !r.externalConnected { lastDraw = 0 }
         model.reading = r
 
         let bar = barContent(r)
