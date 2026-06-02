@@ -364,7 +364,7 @@ struct AuroraCard: View {
             HStack(spacing: 8) {
                 if d.showPowerSplit {
                     GlassPill(label: "BATTERY", value: "\(Int(d.intoBattery.rounded()))W")
-                    GlassPill(label: "SYSTEM", value: "\(Int(d.systemWatts.rounded()))W")
+                    GlassPill(label: "DRAW", value: "\(Int(d.systemWatts.rounded()))W")
                     if let ceil = d.ceiling { GlassPill(label: "AVAIL", value: "\(ceil)W") }
                 } else {
                     if let ceil = d.ceiling { GlassPill(label: "AVAIL", value: "\(ceil)W") }
