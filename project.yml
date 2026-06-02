@@ -15,6 +15,8 @@ settings:
     SWIFT_VERSION: "5.0"
     PRODUCT_BUNDLE_IDENTIFIER: de.steffenbehn.macchargepower
     ENABLE_HARDENED_RUNTIME: YES
+    DEAD_CODE_STRIPPING: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
 targets:
   MacChargePower:
     type: application
