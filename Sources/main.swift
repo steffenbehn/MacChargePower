@@ -694,7 +694,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             lastBarTitle = bar.title
         }
 
-        let desired = r.externalConnected ? pollInterval : batteryPollInterval
+        // Fast poll while plugged in OR while the detail card is open (you're watching
+        // for live changes); slow poll only when on battery with the card closed.
+        let desired = (r.externalConnected || card.isVisible) ? pollInterval : batteryPollInterval
         if timer == nil || timerInterval != desired {
             timer?.invalidate()
             let t = Timer(timeInterval: desired, repeats: true) { [weak self] _ in self?.update() }
@@ -740,6 +742,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             showMenu()
         } else if let button = statusItem.button {
             card.toggle(from: button)
+            update()   // refresh now + switch to the faster poll while the card is open
         }
     }
 
