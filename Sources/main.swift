@@ -392,13 +392,6 @@ struct AuroraCard: View {
                 Spacer(minLength: 8)
                 BlinkDot(color: d.charging ? Aurora.green : .white.opacity(0.4), active: d.charging)
                 Text(d.statusText).font(.system(size: 11.5)).foregroundColor(.white.opacity(0.7))
-                Button(action: { NSApp.terminate(nil) }) {
-                    Image(systemName: "power").font(.system(size: 11, weight: .semibold))
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(.white.opacity(0.35))
-                .padding(.leading, 2)
-                .help("Quit MacChargePower")
             }
             .padding(.bottom, 14)
 
@@ -780,20 +773,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func addBatteryHealth(to menu: NSMenu) {
         let h = readBatteryHealth()
-        let header: NSMenuItem
-        if #available(macOS 14.0, *) {
-            header = NSMenuItem.sectionHeader(title: "Battery Health")
-        } else {
-            header = NSMenuItem(title: "Battery Health", action: nil, keyEquivalent: "")
-            header.isEnabled = false
-        }
-        menu.addItem(header)
+        let titleFont = NSFont.menuFont(ofSize: 0)                       // same as the other items
+        let infoFont = NSFont.menuFont(ofSize: NSFont.smallSystemFontSize) // smaller
 
-        func info(_ text: String) {
+        func row(_ text: String, font: NSFont, color: NSColor, indent: Int = 0) {
             let item = NSMenuItem(title: text, action: nil, keyEquivalent: "")
             item.isEnabled = false
+            item.indentationLevel = indent
+            item.attributedTitle = NSAttributedString(string: text,
+                                                      attributes: [.font: font, .foregroundColor: color])
             menu.addItem(item)
         }
+
+        row("Battery Health", font: titleFont, color: .labelColor)   // headline matches the rest
+        menu.addItem(.separator())                                    // horizontal bar like the rest
+        func info(_ text: String) { row(text, font: infoFont, color: .secondaryLabelColor, indent: 1) }
         info("Cycle count: \(h.cycleCount.map(String.init) ?? "—")")
         if let c = h.currentCapacity, let d = h.designCapacity { info("Capacity: \(c) of \(d) mAh") }
         info("Health: \(h.healthPercent.map { "\($0)%" } ?? "—")")
