@@ -73,6 +73,7 @@ func formatMinutes(_ m: Int) -> String { m >= 60 ? "\(m / 60)h \(m % 60)m" : "\(
 /// Menu-bar icon: SF Symbol + short label.
 func barContent(_ r: PowerReading) -> (symbol: String, title: String) {
     if !r.externalConnected { return ("bolt.slash", "") }
+    if r.adapterDrawWatts > 0.5 { return ("bolt.fill", "\(Int(r.adapterDrawWatts.rounded()))W") }   // total draw
     if r.isCharging && r.chargeWatts >= 0.5 { return ("bolt.fill", "\(Int(r.chargeWatts.rounded()))W") }
     if r.fullyCharged { return ("bolt.fill", "") }
     return ("powerplug", "")
@@ -125,9 +126,10 @@ struct CardDisplay {
     var ceiling: Int?
     var voltage = 0.0
     var amps = 0.0
-    var fillLevel = 0.0    // 0–1, share of the charger's capacity actually in use
-    var draw = 0.0         // total W pulled from the charger
-    var systemWatts = 0.0  // W running the Mac (draw − into-battery)
+    var fillLevel = 0.0     // 0–1, share of the charger's capacity actually in use
+    var draw = 0.0          // total W pulled from the charger (the hero number when plugged in)
+    var intoBattery = 0.0   // W flowing into the battery
+    var systemWatts = 0.0   // W running the Mac + anything it powers (draw − into-battery)
     var showPowerSplit = false
 }
 
@@ -138,10 +140,10 @@ func cardDisplay(_ r: PowerReading) -> CardDisplay {
     d.amps = r.amperage
     d.ceiling = r.adapterWatts
     d.draw = r.adapterDrawWatts
+    d.intoBattery = r.chargeWatts
     d.systemWatts = max(r.adapterDrawWatts - r.chargeWatts, 0)
 
-    // Liquid fill = how much of the charger's capacity is in use. Prefer the real
-    // total draw (into battery + system); fall back to the charge rate alone.
+    // Liquid fill = how much of the charger's capacity is in use (total draw).
     if r.externalConnected, let c = r.adapterWatts, c > 0 {
         if r.adapterDrawWatts > 0 {
             d.fillLevel = min(r.adapterDrawWatts / Double(c), 1)
@@ -151,18 +153,31 @@ func cardDisplay(_ r: PowerReading) -> CardDisplay {
         }
     }
 
-    if r.isCharging && r.chargeWatts >= 0.5 {
+    if r.externalConnected && r.adapterDrawWatts > 0.5 {
+        // Hero = total power being drawn from the charger.
+        d.big = "\(Int(r.adapterDrawWatts.rounded()))"; d.unit = "W"
+        d.charging = r.isCharging || r.fullyCharged
+        if r.isCharging {
+            var s = "\(pct)%"
+            if let m = r.minutesToFull { s += " · full in \(formatMinutes(m))" }
+            d.statusText = "Charging"; d.sub = s
+        } else if r.fullyCharged {
+            d.statusText = "Charged"; d.sub = "\(pct)% · maintained"
+        } else {
+            d.statusText = "Plugged in"; d.sub = "\(pct)% · not charging"
+        }
+    } else if r.isCharging && r.chargeWatts >= 0.5 {
+        // Fallback when draw telemetry is unavailable: show the charge rate.
         d.big = "\(Int(r.chargeWatts.rounded()))"; d.unit = "W"
         d.charging = true; d.statusText = "Charging"
         var s = "\(pct)%"
         if let m = r.minutesToFull { s += " · full in \(formatMinutes(m))" }
         d.sub = s
-    } else if r.fullyCharged {
-        d.big = "Full"; d.statusText = "Charged"; d.charging = true
-        d.sub = "\(pct)% · maintained"
     } else if r.externalConnected {
-        d.big = "Hold"; d.statusText = "On hold"
-        d.sub = "\(pct)% · not charging"
+        d.big = r.fullyCharged ? "Full" : "Plugged"
+        d.charging = r.fullyCharged
+        d.statusText = r.fullyCharged ? "Charged" : "Plugged in"
+        d.sub = "\(pct)%"
     } else {
         d.big = "\(pct)"; d.unit = "%"; d.statusText = "On battery"
         d.sub = "Not plugged in"
@@ -348,8 +363,8 @@ struct AuroraCard: View {
 
             HStack(spacing: 8) {
                 if d.showPowerSplit {
-                    GlassPill(label: "DRAW", value: "\(Int(d.draw.rounded()))W")
-                    GlassPill(label: "TO MAC", value: "\(Int(d.systemWatts.rounded()))W")
+                    GlassPill(label: "BATTERY", value: "\(Int(d.intoBattery.rounded()))W")
+                    GlassPill(label: "SYSTEM", value: "\(Int(d.systemWatts.rounded()))W")
                     if let ceil = d.ceiling { GlassPill(label: "CHARGER", value: "\(ceil)W") }
                 } else {
                     if let ceil = d.ceiling { GlassPill(label: "CHARGER", value: "\(ceil)W") }
@@ -392,7 +407,8 @@ struct AuroraToast: View {
 
     private var subtitle: String {
         let r = model.reading
-        if r.isCharging && r.chargeWatts >= 0.5 { return "Now drawing \(Int(r.chargeWatts.rounded())) W" }
+        let w = r.adapterDrawWatts > 0 ? r.adapterDrawWatts : r.chargeWatts
+        if r.externalConnected && w >= 0.5 { return "Drawing \(Int(w.rounded())) W from charger" }
         if r.fullyCharged { return "Battery full" }
         if !r.externalConnected { return "On battery" }
         return "Connected"
@@ -620,7 +636,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             timer?.invalidate(); timer = nil
         }
 
-        let watts = Int(r.chargeWatts.rounded())
+        let watts = Int((r.adapterDrawWatts > 0 ? r.adapterDrawWatts : r.chargeWatts).rounded())
         if firstRun {
             firstRun = false
             lastExternal = r.externalConnected
