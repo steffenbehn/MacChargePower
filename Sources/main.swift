@@ -68,6 +68,33 @@ func readPower() -> PowerReading {
     return r
 }
 
+struct BatteryHealth {
+    var cycleCount: Int?
+    var currentCapacity: Int?   // mAh, present full-charge capacity
+    var designCapacity: Int?    // mAh
+    var healthPercent: Int?
+    var condition = "—"
+}
+
+func readBatteryHealth() -> BatteryHealth {
+    var h = BatteryHealth()
+    let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
+    guard service != 0 else { return h }
+    defer { IOObjectRelease(service) }
+    var unmanaged: Unmanaged<CFMutableDictionary>?
+    guard IORegistryEntryCreateCFProperties(service, &unmanaged, kCFAllocatorDefault, 0) == KERN_SUCCESS,
+          let p = unmanaged?.takeRetainedValue() as? [String: Any] else { return h }
+    h.cycleCount = p["CycleCount"] as? Int
+    h.designCapacity = p["DesignCapacity"] as? Int
+    h.currentCapacity = p["AppleRawMaxCapacity"] as? Int
+    if let c = h.currentCapacity, let d = h.designCapacity, d > 0 {
+        h.healthPercent = Int((Double(c) / Double(d) * 100).rounded())
+    }
+    let failure = (p["PermanentFailureStatus"] as? Int) ?? 0
+    h.condition = failure == 0 ? "Normal" : "Service Recommended"
+    return h
+}
+
 func formatMinutes(_ m: Int) -> String { m >= 60 ? "\(m / 60)h \(m % 60)m" : "\(m)m" }
 
 /// Menu-bar icon: SF Symbol + short label.
@@ -364,7 +391,7 @@ struct AuroraCard: View {
             HStack(spacing: 8) {
                 if d.showPowerSplit {
                     GlassPill(label: "BATTERY", value: "\(Int(d.intoBattery.rounded()))W")
-                    GlassPill(label: "DRAW", value: "\(Int(d.systemWatts.rounded()))W")
+                    GlassPill(label: "SYSTEM", value: "\(Int(d.systemWatts.rounded()))W")
                     if let ceil = d.ceiling { GlassPill(label: "AVAIL", value: "\(ceil)W") }
                 } else {
                     if let ceil = d.ceiling { GlassPill(label: "AVAIL", value: "\(ceil)W") }
@@ -671,6 +698,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showMenu() {
         let menu = NSMenu()
 
+        addBatteryHealth(to: menu)
+        menu.addItem(.separator())
+
         let login = NSMenuItem(title: "Launch at Login",
                                action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
         login.target = self
@@ -683,6 +713,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = statusItem.button {
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 4), in: button)
         }
+    }
+
+    private func addBatteryHealth(to menu: NSMenu) {
+        let h = readBatteryHealth()
+        let header: NSMenuItem
+        if #available(macOS 14.0, *) {
+            header = NSMenuItem.sectionHeader(title: "Battery Health")
+        } else {
+            header = NSMenuItem(title: "Battery Health", action: nil, keyEquivalent: "")
+            header.isEnabled = false
+        }
+        menu.addItem(header)
+
+        func info(_ text: String) {
+            let item = NSMenuItem(title: text, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+        }
+        info("Cycle count: \(h.cycleCount.map(String.init) ?? "—")")
+        if let c = h.currentCapacity, let d = h.designCapacity { info("Capacity: \(c) of \(d) mAh") }
+        info("Health: \(h.healthPercent.map { "\($0)%" } ?? "—")")
+        info("Condition: \(h.condition)")
     }
 
     @objc private func toggleLaunchAtLogin() {
