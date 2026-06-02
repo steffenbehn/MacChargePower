@@ -44,7 +44,9 @@ func readPower() -> PowerReading {
         r.amperage = amps
         r.chargeWatts = r.voltage * amps
     } else if !r.externalConnected {
-        let amps = abs(Double(mA)) / 1000.0
+        var dmA = mA
+        if dmA == 0, let inst = props["InstantAmperage"] as? Int { dmA = inst }
+        let amps = abs(Double(dmA)) / 1000.0
         r.amperage = amps
         r.dischargeWatts = r.voltage * amps
     }
@@ -225,12 +227,13 @@ func cardDisplay(_ r: PowerReading) -> CardDisplay {
         d.statusText = "On battery"
         if r.dischargeWatts >= 0.5 {
             d.big = "\(Int(r.dischargeWatts.rounded()))"; d.unit = "W"   // how fast you're draining
+            var s = "\(pct)%"
+            if let m = r.minutesToEmpty { s += " · \(formatMinutes(m)) left" }
+            d.sub = s
         } else {
             d.big = "\(pct)"; d.unit = "%"
+            d.sub = r.minutesToEmpty.map { "\(formatMinutes($0)) left" } ?? "Discharging…"
         }
-        var s = "\(pct)%"
-        if let m = r.minutesToEmpty { s += " · \(formatMinutes(m)) left" }
-        d.sub = s
     }
     return d
 }
@@ -635,7 +638,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastPercent = 100
     private var lastFully = false
 
-    private let pollInterval = 2.0
+    private let pollInterval = 2.0          // while plugged in
+    private let batteryPollInterval = 8.0   // on battery (lighter, but still live)
+    private var timerInterval = 0.0
     private let wattChangeThreshold = 10
 
     func applicationDidFinishLaunching(_ note: Notification) {
@@ -683,14 +688,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             lastBarTitle = bar.title
         }
 
-        if r.externalConnected {
-            if timer == nil {
-                let t = Timer(timeInterval: pollInterval, repeats: true) { [weak self] _ in self?.update() }
-                RunLoop.main.add(t, forMode: .common)
-                timer = t
-            }
-        } else {
-            timer?.invalidate(); timer = nil
+        let desired = r.externalConnected ? pollInterval : batteryPollInterval
+        if timer == nil || timerInterval != desired {
+            timer?.invalidate()
+            let t = Timer(timeInterval: desired, repeats: true) { [weak self] _ in self?.update() }
+            RunLoop.main.add(t, forMode: .common)
+            timer = t
+            timerInterval = desired
         }
 
         let watts = Int((r.adapterDrawWatts > 0 ? r.adapterDrawWatts : r.chargeWatts).rounded())
