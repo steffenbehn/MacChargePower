@@ -15,8 +15,10 @@ struct PowerReading {
     var amperage = 0.0        // A
     var adapterWatts: Int?    // negotiated ceiling from the PD handshake (65W / 100W…)
     var adapterDrawWatts = 0.0 // total power pulled from the charger (into battery + running the Mac)
+    var dischargeWatts = 0.0  // power leaving the battery when on battery (V × |A|)
     var percent: Int?
     var minutesToFull: Int?
+    var minutesToEmpty: Int?
 }
 
 /// Reads `AppleSmartBattery` from the IORegistry — instant and low-cost.
@@ -35,12 +37,16 @@ func readPower() -> PowerReading {
     r.fullyCharged      = (props["FullyCharged"] as? Bool) ?? false
 
     let mV = (props["Voltage"] as? Int) ?? 0
-    let mA = (props["Amperage"] as? Int) ?? 0
+    let mA = (props["Amperage"] as? Int) ?? 0   // signed: + while charging, − while discharging
     r.voltage = Double(mV) / 1000.0
     if r.isCharging {
         let amps = abs(Double(mA)) / 1000.0
         r.amperage = amps
         r.chargeWatts = r.voltage * amps
+    } else if !r.externalConnected {
+        let amps = abs(Double(mA)) / 1000.0
+        r.amperage = amps
+        r.dischargeWatts = r.voltage * amps
     }
 
     // Ceiling = the PD handshake result, individual to this charger + cable.
@@ -65,6 +71,10 @@ func readPower() -> PowerReading {
     if let cur = cur { r.percent = max > 0 ? Int((Double(cur) / Double(max) * 100).rounded()) : cur }
 
     if r.isCharging, let t = props["AvgTimeToFull"] as? Int, t > 0, t < 60000 { r.minutesToFull = t }
+    if !r.externalConnected {
+        let t = (props["AvgTimeToEmpty"] as? Int) ?? (props["TimeRemaining"] as? Int) ?? 0
+        if t > 0, t < 60000 { r.minutesToEmpty = t }   // 65535 = "not yet known"
+    }
     return r
 }
 
@@ -73,6 +83,7 @@ struct BatteryHealth {
     var currentCapacity: Int?   // mAh, present full-charge capacity
     var designCapacity: Int?    // mAh
     var healthPercent: Int?
+    var temperatureC: Double?
     var condition = "—"
 }
 
@@ -90,6 +101,7 @@ func readBatteryHealth() -> BatteryHealth {
     if let c = h.currentCapacity, let d = h.designCapacity, d > 0 {
         h.healthPercent = Int((Double(c) / Double(d) * 100).rounded())
     }
+    if let temp = p["Temperature"] as? Int { h.temperatureC = Double(temp) / 100.0 }  // 0.01 °C
     let failure = (p["PermanentFailureStatus"] as? Int) ?? 0
     h.condition = failure == 0 ? "Normal" : "Service Recommended"
     return h
@@ -171,13 +183,17 @@ func cardDisplay(_ r: PowerReading) -> CardDisplay {
     d.systemWatts = max(r.adapterDrawWatts - r.chargeWatts, 0)
 
     // Liquid fill = how much of the charger's capacity is in use (total draw).
-    if r.externalConnected, let c = r.adapterWatts, c > 0 {
-        if r.adapterDrawWatts > 0 {
-            d.fillLevel = min(r.adapterDrawWatts / Double(c), 1)
-            d.showPowerSplit = true
-        } else {
-            d.fillLevel = min(r.chargeWatts / Double(c), 1)
+    if r.externalConnected {
+        if let c = r.adapterWatts, c > 0 {
+            if r.adapterDrawWatts > 0 {
+                d.fillLevel = min(r.adapterDrawWatts / Double(c), 1)
+                d.showPowerSplit = true
+            } else {
+                d.fillLevel = min(r.chargeWatts / Double(c), 1)
+            }
         }
+    } else {
+        d.fillLevel = Double(pct) / 100   // on battery: fill shows the battery level
     }
 
     if r.externalConnected && r.adapterDrawWatts > 0.5 {
@@ -206,8 +222,15 @@ func cardDisplay(_ r: PowerReading) -> CardDisplay {
         d.statusText = r.fullyCharged ? "Charged" : "Plugged in"
         d.sub = "\(pct)%"
     } else {
-        d.big = "\(pct)"; d.unit = "%"; d.statusText = "On battery"
-        d.sub = "Not plugged in"
+        d.statusText = "On battery"
+        if r.dischargeWatts >= 0.5 {
+            d.big = "\(Int(r.dischargeWatts.rounded()))"; d.unit = "W"   // how fast you're draining
+        } else {
+            d.big = "\(pct)"; d.unit = "%"
+        }
+        var s = "\(pct)%"
+        if let m = r.minutesToEmpty { s += " · \(formatMinutes(m)) left" }
+        d.sub = s
     }
     return d
 }
@@ -434,10 +457,12 @@ struct AuroraToast: View {
 
     private var subtitle: String {
         let r = model.reading
+        if r.fullyCharged { return "Battery maintained" }
         let w = r.adapterDrawWatts > 0 ? r.adapterDrawWatts : r.chargeWatts
         if r.externalConnected && w >= 0.5 { return "Drawing \(Int(w.rounded())) W from charger" }
-        if r.fullyCharged { return "Battery full" }
-        if !r.externalConnected { return "On battery" }
+        if !r.externalConnected {
+            return r.dischargeWatts >= 0.5 ? "Using \(Int(r.dischargeWatts.rounded())) W" : "On battery"
+        }
         return "Connected"
     }
 
@@ -607,6 +632,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastBarSymbol = ""
     private var lastBarTitle = ""
     private var lastFlashWatts = 0
+    private var lastPercent = 100
+    private var lastFully = false
 
     private let pollInterval = 2.0
     private let wattChangeThreshold = 10
@@ -672,6 +699,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             lastExternal = r.externalConnected
             lastCharging = r.isCharging
             lastFlashWatts = watts
+            lastPercent = r.percent ?? 100
+            lastFully = r.fullyCharged
             if notificationsEnabled { hud.show(title: r.externalConnected ? "MacChargePower" : "On battery") }
             return
         }
@@ -682,8 +711,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if r.isCharging && abs(watts - lastFlashWatts) >= wattChangeThreshold {
             title = "Power shifted"; lastFlashWatts = watts
         }
+        let pct = r.percent ?? lastPercent
+        if r.isCharging && lastPercent < 80 && pct >= 80 { title = "Reached 80%" }
+        if r.fullyCharged && !lastFully { title = "Fully charged" }
+        if !r.externalConnected && lastPercent > 20 && pct <= 20 { title = "Low battery — \(pct)%" }
         lastExternal = r.externalConnected
         lastCharging = r.isCharging
+        lastFully = r.fullyCharged
+        lastPercent = pct
 
         if let title = title, notificationsEnabled { hud.show(title: title) }
     }
@@ -749,6 +784,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         info("Cycle count: \(h.cycleCount.map(String.init) ?? "—")")
         if let c = h.currentCapacity, let d = h.designCapacity { info("Capacity: \(c) of \(d) mAh") }
         info("Health: \(h.healthPercent.map { "\($0)%" } ?? "—")")
+        if let t = h.temperatureC { info("Temperature: \(String(format: "%.0f", t)) °C") }
         info("Condition: \(h.condition)")
     }
 
