@@ -592,7 +592,7 @@ final class CardPanel {
 
 // MARK: - App
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let model = ChargeModel()
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private lazy var card = CardPanel(model: model)
@@ -710,9 +710,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "Quit MacChargePower",
                      action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
-        if let button = statusItem.button {
-            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 4), in: button)
-        }
+        // Attach to the status item and click it, so macOS anchors the menu under
+        // the bar itself. (Manual popUp(at:) mis-positions and jumps on hover.)
+        menu.delegate = self
+        statusItem.menu = menu
+        statusItem.button?.performClick(nil)
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        statusItem.menu = nil   // detach so left-click opens the detail card again
     }
 
     private func addBatteryHealth(to menu: NSMenu) {
