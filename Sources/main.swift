@@ -773,21 +773,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func addBatteryHealth(to menu: NSMenu) {
         let h = readBatteryHealth()
-        let titleFont = NSFont.menuFont(ofSize: 0)                       // same as the other items
-        let infoFont = NSFont.menuFont(ofSize: NSFont.smallSystemFontSize) // smaller
 
-        func row(_ text: String, font: NSFont, color: NSColor, indent: Int = 0) {
-            let item = NSMenuItem(title: text, action: nil, keyEquivalent: "")
-            item.isEnabled = false
-            item.indentationLevel = indent
-            item.attributedTitle = NSAttributedString(string: text,
-                                                      attributes: [.font: font, .foregroundColor: color])
-            menu.addItem(item)
+        // Custom-view rows: disabled menu items get dimmed by AppKit no matter the
+        // color, so we render our own labels to control darkness exactly.
+        func row(_ text: String, font: NSFont, color: NSColor, leading: CGFloat) -> NSMenuItem {
+            let label = NSTextField(labelWithString: text)
+            label.font = font
+            label.textColor = color
+            label.translatesAutoresizingMaskIntoConstraints = false
+            let v = NSView(frame: NSRect(x: 0, y: 0, width: 250, height: font.pointSize + 12))
+            v.addSubview(label)
+            NSLayoutConstraint.activate([
+                label.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: leading),
+                label.trailingAnchor.constraint(lessThanOrEqualTo: v.trailingAnchor, constant: -12),
+                label.centerYAnchor.constraint(equalTo: v.centerYAnchor),
+            ])
+            let item = NSMenuItem()
+            item.view = v
+            return item
         }
 
-        row("Battery Health", font: titleFont, color: .labelColor)   // headline matches the rest
-        menu.addItem(.separator())                                    // horizontal bar like the rest
-        func info(_ text: String) { row(text, font: infoFont, color: .secondaryLabelColor, indent: 1) }
+        menu.addItem(row("Battery Health", font: .menuFont(ofSize: 0), color: .labelColor, leading: 21))
+        menu.addItem(.separator())
+        func info(_ text: String) {
+            menu.addItem(row(text, font: .menuFont(ofSize: 11.5), color: .secondaryLabelColor, leading: 37))
+        }
         info("Cycle count: \(h.cycleCount.map(String.init) ?? "—")")
         if let c = h.currentCapacity, let d = h.designCapacity { info("Capacity: \(c) of \(d) mAh") }
         info("Health: \(h.healthPercent.map { "\($0)%" } ?? "—")")
