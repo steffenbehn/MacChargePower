@@ -365,9 +365,9 @@ struct AuroraCard: View {
                 if d.showPowerSplit {
                     GlassPill(label: "BATTERY", value: "\(Int(d.intoBattery.rounded()))W")
                     GlassPill(label: "SYSTEM", value: "\(Int(d.systemWatts.rounded()))W")
-                    if let ceil = d.ceiling { GlassPill(label: "CHARGER", value: "\(ceil)W") }
+                    if let ceil = d.ceiling { GlassPill(label: "AVAIL", value: "\(ceil)W") }
                 } else {
-                    if let ceil = d.ceiling { GlassPill(label: "CHARGER", value: "\(ceil)W") }
+                    if let ceil = d.ceiling { GlassPill(label: "AVAIL", value: "\(ceil)W") }
                     GlassPill(label: "VOLTS", value: String(format: "%.2f", d.voltage))
                     GlassPill(label: "AMPS", value: String(format: "%.2f", d.amps))
                 }
