@@ -612,6 +612,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let wattChangeThreshold = 10
 
     func applicationDidFinishLaunching(_ note: Notification) {
+        UserDefaults.standard.register(defaults: ["notificationsEnabled": true])
         if let button = statusItem.button {
             button.imagePosition = .imageLeading
             button.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .medium)
@@ -636,6 +637,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             CFRunLoopAddSource(CFRunLoopGetMain(), source, .defaultMode)
         }
     }
+
+    private var notificationsEnabled: Bool { UserDefaults.standard.bool(forKey: "notificationsEnabled") }
 
     @objc func update() {
         let r = readPower()
@@ -669,7 +672,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             lastExternal = r.externalConnected
             lastCharging = r.isCharging
             lastFlashWatts = watts
-            hud.show(title: r.externalConnected ? "MacChargePower" : "On battery")
+            if notificationsEnabled { hud.show(title: r.externalConnected ? "MacChargePower" : "On battery") }
             return
         }
 
@@ -682,7 +685,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         lastExternal = r.externalConnected
         lastCharging = r.isCharging
 
-        if let title = title { hud.show(title: title) }
+        if let title = title, notificationsEnabled { hud.show(title: title) }
     }
 
     // MARK: Status-item interaction
@@ -700,6 +703,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         addBatteryHealth(to: menu)
         menu.addItem(.separator())
+
+        let notif = NSMenuItem(title: "Show Notifications",
+                               action: #selector(toggleNotifications), keyEquivalent: "")
+        notif.target = self
+        notif.state = notificationsEnabled ? .on : .off
+        menu.addItem(notif)
 
         let login = NSMenuItem(title: "Launch at Login",
                                action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
@@ -741,6 +750,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let c = h.currentCapacity, let d = h.designCapacity { info("Capacity: \(c) of \(d) mAh") }
         info("Health: \(h.healthPercent.map { "\($0)%" } ?? "—")")
         info("Condition: \(h.condition)")
+    }
+
+    @objc private func toggleNotifications() {
+        let key = "notificationsEnabled"
+        UserDefaults.standard.set(!UserDefaults.standard.bool(forKey: key), forKey: key)
     }
 
     @objc private func toggleLaunchAtLogin() {
