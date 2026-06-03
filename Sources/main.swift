@@ -505,15 +505,18 @@ final class OverlayHUD {
         window.isReleasedWhenClosed = false
         window.ignoresMouseEvents = true
         window.alphaValue = 0
-
-        let host = NSHostingView(rootView: AuroraToast(model: model))
-        host.frame = NSRect(origin: .zero, size: size)
-        host.autoresizingMask = [.width, .height]
-        window.contentView = host
+        // The animated SwiftUI toast is created only while visible (see show) so its
+        // TimelineView animations don't burn CPU when the toast is hidden.
     }
 
     func show(title: String) {
         model.toastTitle = title
+        if window.contentView == nil {
+            let host = NSHostingView(rootView: AuroraToast(model: model))
+            host.frame = NSRect(origin: .zero, size: size)
+            host.autoresizingMask = [.width, .height]
+            window.contentView = host
+        }
         position()
         hideWork?.cancel()
         window.orderFrontRegardless()
@@ -526,7 +529,10 @@ final class OverlayHUD {
     private func hide() {
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.3; window.animator().alphaValue = 0
-        }, completionHandler: { [weak self] in self?.window.orderOut(nil) })
+        }, completionHandler: { [weak self] in
+            self?.window.orderOut(nil)
+            self?.window.contentView = nil   // stop the toast's animations while hidden
+        })
     }
 
     private func position() {
@@ -545,15 +551,12 @@ final class KeyPanel: NSPanel {
 
 final class CardPanel {
     private let window: KeyPanel
-    private let host: NSHostingView<AuroraCard>
     private let model: ChargeModel
     private var monitor: Any?
 
     init(model: ChargeModel) {
         self.model = model
-        host = NSHostingView(rootView: AuroraCard(model: model))
-        host.frame = NSRect(x: 0, y: 0, width: 300, height: 360)
-        window = KeyPanel(contentRect: host.frame,
+        window = KeyPanel(contentRect: NSRect(x: 0, y: 0, width: 300, height: 360),
                           styleMask: [.borderless, .nonactivatingPanel],
                           backing: .buffered, defer: false)
         window.isOpaque = false
@@ -563,7 +566,7 @@ final class CardPanel {
         window.isReleasedWhenClosed = false
         window.isMovable = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        window.contentView = host
+        // The animated SwiftUI card is created only while open (see show).
     }
 
     var isVisible: Bool { window.isVisible }
@@ -573,6 +576,9 @@ final class CardPanel {
     }
 
     private func show(from button: NSStatusBarButton) {
+        let host = NSHostingView(rootView: AuroraCard(model: model))
+        host.frame = NSRect(x: 0, y: 0, width: 300, height: 360)
+        window.contentView = host
         host.layoutSubtreeIfNeeded()
         let size = host.fittingSize
         window.setContentSize(size)
@@ -597,6 +603,7 @@ final class CardPanel {
     func hide() {
         stopMonitor()
         window.orderOut(nil)
+        window.contentView = nil   // stop the card's animations while closed
     }
 
     private func startMonitor() {
