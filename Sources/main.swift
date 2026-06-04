@@ -204,7 +204,7 @@ func cardDisplay(_ r: PowerReading) -> CardDisplay {
         d.charging = r.isCharging || r.fullyCharged
         if r.isCharging {
             var s = "\(pct)%"
-            if let m = r.minutesToFull { s += " · full in \(formatMinutes(m))" }
+            if let m = r.minutesToFull { s += m > 600 ? " · charging slowly" : " · full in \(formatMinutes(m))" }
             d.statusText = "Charging"; d.sub = s
         } else if r.fullyCharged {
             d.statusText = "Charged"; d.sub = "\(pct)% · maintained"
@@ -216,7 +216,7 @@ func cardDisplay(_ r: PowerReading) -> CardDisplay {
         d.big = "\(Int(r.chargeWatts.rounded()))"; d.unit = "W"
         d.charging = true; d.statusText = "Charging"
         var s = "\(pct)%"
-        if let m = r.minutesToFull { s += " · full in \(formatMinutes(m))" }
+        if let m = r.minutesToFull { s += m > 600 ? " · charging slowly" : " · full in \(formatMinutes(m))" }
         d.sub = s
     } else if r.externalConnected {
         d.big = "\(pct)"; d.unit = "%"
