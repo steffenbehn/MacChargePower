@@ -225,14 +225,15 @@ func cardDisplay(_ r: PowerReading) -> CardDisplay {
         d.sub = r.fullyCharged ? "Fully charged" : "Measuring power…"
     } else {
         d.statusText = "On battery"
+        // Time-to-empty is only meaningful at a real draw; near-0 current makes
+        // IOKit's estimate explode (e.g. 506h), so only show sane values (≤ 24h).
+        let timeLeft = r.minutesToEmpty.flatMap { $0 <= 1440 ? "\(formatMinutes($0)) left" : nil }
         if r.dischargeWatts >= 0.5 {
             d.big = "\(Int(r.dischargeWatts.rounded()))"; d.unit = "W"   // how fast you're draining
-            var s = "\(pct)%"
-            if let m = r.minutesToEmpty { s += " · \(formatMinutes(m)) left" }
-            d.sub = s
+            d.sub = "\(pct)%" + (timeLeft.map { " · \($0)" } ?? "")
         } else {
             d.big = "\(pct)"; d.unit = "%"
-            d.sub = r.minutesToEmpty.map { "\(formatMinutes($0)) left" } ?? "Discharging…"
+            d.sub = timeLeft ?? "Measuring…"
         }
     }
     return d
